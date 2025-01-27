@@ -1,5 +1,5 @@
 # GeminiCraftChat
-
+# 此仓库不再更新，请前往[组织](https://github.com/geminicraftchat/gcc)
 GeminiCraftChat 是一个 Minecraft 插件，它将 Google Gemini AI 带入您的服务器，为玩家提供智能对话体验。
 
 ## 特性

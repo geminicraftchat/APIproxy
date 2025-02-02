@@ -18,33 +18,8 @@ public class ConfigManager {
         this.config = plugin.getConfig();
     }
 
-    public String getApiKey() {
-        String envKey = System.getenv("GEMINI_API_KEY");
-        if (envKey != null && !envKey.isEmpty()) {
-            return envKey;
-        }
-        
-        if (isProxyApi()) {
-            String proxyKey = config.getString("api.proxy.key");
-            if (proxyKey != null && !proxyKey.isEmpty() && !proxyKey.equals("your-proxy-key")) {
-                return proxyKey;
-            }
-        } else {
-            String directKey = config.getString("api.direct.key");
-            if (directKey != null && !directKey.isEmpty() && !directKey.equals("your-api-key-here")) {
-                return directKey;
-            }
-        }
-        
-        return null;
-    }
-
-    public String getModel() {
-        return config.getString("api.direct.model", "gemini-pro");
-    }
-
-    public boolean isProxyEnabled() {
-        return config.getBoolean("api.proxy.enabled", false);
+    public FileConfiguration getConfig() {
+        return config;
     }
 
     public String getDefaultTrigger() {
@@ -54,18 +29,6 @@ public class ConfigManager {
     public List<String> getTriggerWords() {
         List<String> words = config.getStringList("chat.trigger_words");
         return words != null ? words : new ArrayList<>();
-    }
-
-    public FileConfiguration getConfig() {
-        return config;
-    }
-
-    public String getProjectId() {
-        return config.getString("api.project_id");
-    }
-
-    public String getLocation() {
-        return config.getString("api.location", "us-central1");
     }
 
     public int getMaxHistory() {
@@ -97,30 +60,6 @@ public class ConfigManager {
         return words != null ? words : new ArrayList<>();
     }
 
-    public String getFilterReplacement() {
-        return config.getString("filter.replacement", "***");
-    }
-
-    public String getProxyHost() {
-        return config.getString("api.proxy.host", "127.0.0.1");
-    }
-
-    public int getProxyPort() {
-        return config.getInt("api.proxy.port", 7890);
-    }
-
-    public boolean isProxyApi() {
-        return "proxy".equalsIgnoreCase(config.getString("api.type", "direct"));
-    }
-
-    public String getProxyApiUrl() {
-        return config.getString("api.proxy.url");
-    }
-
-    public String getProxyApiKey() {
-        return config.getString("api.proxy.key");
-    }
-
     public boolean isHttpProxyEnabled() {
         return config.getBoolean("api.http_proxy.enabled", false);
     }
@@ -131,14 +70,6 @@ public class ConfigManager {
 
     public int getHttpProxyPort() {
         return config.getInt("api.http_proxy.port", 7890);
-    }
-
-    public int getConnectTimeout() {
-        return config.getInt("api.direct.timeout.connect", 30000);
-    }
-
-    public int getReadTimeout() {
-        return config.getInt("api.direct.timeout.read", 30000);
     }
 
     public String getProxyType() {

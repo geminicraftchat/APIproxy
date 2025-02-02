@@ -7,38 +7,44 @@ debug: true
 api:
   # 负载均衡模式: single(单一), random(随机), failover(故障转移)
   mode: "failover"
+  
   # API节点列表
   items:
-    # 直连节点
-    - name: "gemini-direct-1"
-      type: "direct"        # 直连类型
+    # Gemini 直连节点
+    - name: "gemini-direct"
+      type: "direct"
       enabled: true
       weight: 1
-      key: "your-gemini-key-1"
+      key: "${GEMINI_API_KEY}"  # 从环境变量读取密钥
       model: "gemini-pro"
       timeout:
         connect: 30000
         read: 30000
     
-    # 中转节点1
-    - name: "proxy-1"
-      type: "proxy"         # 中转类型
-      enabled: true
+    # 中转节点示例 (默认禁用)
+    - name: "gemini-proxy"
+      type: "proxy"
+      enabled: false
       weight: 2
-      url: "http://proxy1.example.com/api/chat"
-      key: "your-proxy-key-1"
+      # 注意：此为作者提供的示例API地址，仅支持OpenAI格式
+      # 请根据您的需求修改
+      url: "http://ai.fcl.asia/api/chat"
+      key: "${PROXY_API_KEY}"  # 从环境变量读取密钥
       timeout:
         connect: 20000
         read: 20000
     
-    # OpenAI节点
-    - name: "openai-1"
-      type: "openai"        # OpenAI类型
+    # OpenAI格式节点示例
+    - name: "openai-gemini"
+      type: "openai"
       enabled: true
       weight: 1
-      url: "http://openai1.example.com/v1/chat"
-      key: "your-openai-key-1"
-      model: "gpt-3.5-turbo"
+      # 支持任何兼容OpenAI格式的API
+      url: "http://ai.fcl.asia/v1/chat"
+      # 如果使用默认API地址，请在Google Cloud Console创建密钥
+      # 访问：https://console.cloud.google.com/apis/credentials
+      key: "${OPENAI_API_KEY}"  # 从环境变量读取密钥
+      model: "gemini-1.5-flash"
       temperature: 0.7
       max_tokens: 1024
       timeout:
@@ -50,46 +56,44 @@ api:
     max_retries: 3        # 最大重试次数
     retry_delay: 1000     # 重试延迟(毫秒)
     timeout: 30000        # 超时时间(毫秒)
-    error_threshold: 5    # 错误阈值，超过后暂时禁用该节点
-    recovery_time: 300000 # 恢复时间(毫秒)，节点被禁用后多久重试
-  # 代理服务器设置
+    error_threshold: 5    # 错误阈值
+    recovery_time: 300000 # 节点恢复时间(毫秒)
+  
+  # HTTP代理设置
   http_proxy:
-    enabled: false     # 启用代理
+    enabled: false
+    type: "SOCKS"     # 代理类型: HTTP 或 SOCKS
     host: "127.0.0.1"
     port: 7890
-    type: "SOCKS"     # 代理类型: HTTP 或 SOCKS
 
 # 聊天设置
 chat:
   # 触发词设置
   trigger: "ai"
-  trigger_words:
-    - "ai"
-    - "@ai"
-    - "!ai"
+  trigger_words: ["ai", "@ai", "!ai"]
+  
   # 消息格式
   format:
     thinking: "§7[AI] §f正在思考中..."
     response: "§7[AI] §f%s"
     error: "§c[AI] 发生错误：%s"
-  # 冷却时间 (毫秒)
-  cooldown: 10000
-  # 历史记录长度限制
-  max_history: 10
+  
+  # 基本设置
+  cooldown: 10000      # 冷却时间(毫秒)
+  max_history: 10      # 历史记录长度
+  
   # 广播设置
   broadcast:
-    enabled: true                # 是否启用广播
-    to_players: true            # 是否广播给其他玩家
-    to_console: true            # 是否广播给控制台
+    enabled: true
+    to_players: true
+    to_console: true
     format:
-      question: "§8[AI] §7{player} §f问: §7{message}"    # 问题广播格式
-      answer: "§8[AI] §7回答 §f{player}: §7{message}"    # 回答广播格式
-    ignore_personas:            # 不广播的人设列表
-      - "private"
-      - "secret"
+      question: "§8[AI] §7{player} §f问: §7{message}"
+      answer: "§8[AI] §7回答 §f{player}: §7{message}"
+    ignore_personas: ["private", "secret"]
     permissions:
-      receive: "gcc.broadcast.receive"  # 接收广播的权限
-      bypass: "gcc.broadcast.bypass"    # 跳过广播的权限
+      receive: "gcc.broadcast.receive"
+      bypass: "gcc.broadcast.bypass"
 
 # 人设配置
 personas:
@@ -97,31 +101,16 @@ personas:
     name: "默认助手"
     description: "一个友好的AI助手"
     context: "你是一个友好的AI助手，会用简短的语言回答问题。"
+  
   minecraft:
     name: "MC专家"
     description: "Minecraft游戏专家"
     context: "你是一个Minecraft游戏专家，精通红石、建筑和游戏机制，会用简短的语言回答问题。"
+  
   rpg:
     name: "RPG角色"
     description: "角色扮演游戏中的NPC"
     context: "你是一个生活在中世纪魔法世界的NPC，说话时要符合角色设定，用简短的语言回答问题。"
-
-# 敏感词过滤
-filter:
-  enabled: true
-  words:
-    - "敏感词1"
-    - "敏感词2"
-  replacement: "***"
-
-# 命令设置
-commands:
-  # 中文命令
-  chinese:
-    clear_memory: ["清除记忆", "清空记忆", "忘记对话"]
-    switch_persona: ["切换人设", "换个角色", "更换人设"]
-    list_personas: ["查看人设", "人设列表", "所有角色"]
-    help: ["帮助", "指令", "命令"]
 
 # 安全设置
 security:
@@ -154,9 +143,26 @@ security:
       - "op"
       - "管理"
       - "插件"
+  
   # 消息限制
   limits:
     max_message_length: 500    # 最大消息长度
     max_response_length: 1000  # 最大响应长度
     max_history_size: 20       # 最大历史记录条数
-    rate_limit: 5             # 每分钟最大请求次数 
+    rate_limit: 5             # 每分钟最大请求次数
+
+# 中文命令别名
+commands:
+  chinese:
+    clear_memory: ["清除记忆", "清空记忆", "忘记对话"]
+    switch_persona: ["切换人设", "换个角色", "更换人设"]
+    list_personas: ["查看人设", "人设列表", "所有角色"]
+    help: ["帮助", "指令", "命令"]
+
+# 敏感词过滤
+filter:
+  enabled: true
+  words:
+    - "敏感词1"
+    - "敏感词2"
+  replacement: "***" 

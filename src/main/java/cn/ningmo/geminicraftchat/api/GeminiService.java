@@ -21,7 +21,6 @@ public class GeminiService {
     private final ConfigManager configManager;
     private final Map<String, List<Map<String, String>>> chatHistories;
     private final Gson gson;
-    private final String directApiEndpoint = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent";
     private final Map<String, Object> config;
     private final String type;
     private final String name;
@@ -38,42 +37,33 @@ public class GeminiService {
         this.config = new HashMap<>();
         config.forEach((k, v) -> {
             if (k != null && v != null) {
-                this.config.put(k.toString(), v);
+                this.config.put(String.valueOf(k), v);
             }
         });
         
         this.type = type;
         
-        // 安全地获取配置值
+        // 安全地获取名称
         Object nameObj = config.get("name");
         this.name = nameObj != null ? nameObj.toString() : "unnamed";
         
         // 安全地获取权重
         Object weightObj = config.get("weight");
-        if (weightObj instanceof Number) {
-            this.weight = ((Number) weightObj).intValue();
-        } else {
-            this.weight = 1;
-        }
+        this.weight = weightObj instanceof Number ? ((Number) weightObj).intValue() : 1;
     }
 
     public CompletableFuture<String> sendMessage(String playerId, String message, Optional<Persona> persona) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                String apiType = configManager.getConfig().getString("api.type", "direct");
-                switch (apiType.toLowerCase()) {
+                switch (type.toLowerCase()) {
                     case "direct":
                         return sendDirectRequest(playerId, message, persona);
                     case "proxy":
-                        String format = configManager.getConfig().getString("api.proxy.format", "gemini");
-                        if ("openai".equals(format)) {
-                            return sendOpenAIRequest(playerId, message, persona);
-                        }
                         return sendProxyRequest(playerId, message, persona);
                     case "openai":
                         return sendOpenAIRequest(playerId, message, persona);
                     default:
-                        throw new IllegalStateException("未知的API类型: " + apiType);
+                        throw new IllegalStateException("未知的API类型: " + type);
                 }
             } catch (Exception e) {
                 plugin.getLogger().warning("发送消息失败: " + e.getMessage());
@@ -83,6 +73,14 @@ public class GeminiService {
     }
 
     private String sendProxyRequest(String playerId, String message, Optional<Persona> persona) throws IOException {
+        // 获取代理配置
+        String url = (String) config.get("url");
+        String key = (String) config.get("key");
+        
+        if (url == null) {
+            throw new IllegalStateException("未配置代理URL");
+        }
+        
         JsonObject requestBody = new JsonObject();
         requestBody.addProperty("message", message);
         
@@ -105,7 +103,6 @@ public class GeminiService {
         }
 
         // 发送请求
-        String url = configManager.getProxyApiUrl();
         plugin.debug("中转API URL: " + url);
         plugin.debug("请求体: " + requestBody.toString());
         
@@ -113,8 +110,8 @@ public class GeminiService {
         
         // 设置请求头
         conn.setRequestProperty("Content-Type", "application/json");
-        if (configManager.getProxyApiKey() != null && !configManager.getProxyApiKey().isEmpty()) {
-            conn.setRequestProperty("Authorization", "Bearer " + configManager.getProxyApiKey());
+        if (key != null && !key.isEmpty()) {
+            conn.setRequestProperty("Authorization", "Bearer " + key);
             plugin.debug("已设置Authorization头");
         }
 
@@ -155,6 +152,7 @@ public class GeminiService {
     private HttpURLConnection createConnection(URL url) throws IOException {
         HttpURLConnection conn;
         
+        // 处理代理设置
         if (configManager.isHttpProxyEnabled()) {
             String proxyHost = configManager.getHttpProxyHost();
             int proxyPort = configManager.getHttpProxyPort();
@@ -162,6 +160,7 @@ public class GeminiService {
             
             plugin.debug("使用" + proxyType + "代理: " + proxyHost + ":" + proxyPort);
             
+            // 设置代理
             if ("SOCKS".equalsIgnoreCase(proxyType)) {
                 System.setProperty("socksProxyHost", proxyHost);
                 System.setProperty("socksProxyPort", String.valueOf(proxyPort));
@@ -171,22 +170,51 @@ public class GeminiService {
                 System.setProperty("https.proxyHost", proxyHost);
                 System.setProperty("https.proxyPort", String.valueOf(proxyPort));
             }
-            
-            conn = (HttpURLConnection) url.openConnection();
-        } else {
-            conn = (HttpURLConnection) url.openConnection();
         }
         
-        conn.setRequestMethod("POST");
-        conn.setRequestProperty("Content-Type", "application/json");
-        conn.setConnectTimeout(configManager.getConnectTimeout());
-        conn.setReadTimeout(configManager.getReadTimeout());
-        conn.setDoOutput(true);
-        
-        return conn;
+        try {
+            conn = (HttpURLConnection) url.openConnection();
+            
+            // 获取超时设置
+            Map<String, Object> timeoutConfig = new HashMap<>();
+            Object timeoutObj = config.getOrDefault("timeout", new HashMap<>());
+            if (timeoutObj instanceof Map) {
+                ((Map<?, ?>) timeoutObj).forEach((k, v) -> {
+                    if (k != null && v != null) {
+                        timeoutConfig.put(k.toString(), v);
+                    }
+                });
+            }
+            
+            int connectTimeout = ((Number) timeoutConfig.getOrDefault("connect", 30000)).intValue();
+            int readTimeout = ((Number) timeoutConfig.getOrDefault("read", 30000)).intValue();
+            
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setConnectTimeout(connectTimeout);
+            conn.setReadTimeout(readTimeout);
+            conn.setDoOutput(true);
+            
+            return conn;
+        } finally {
+            // 清理代理设置
+            if (configManager.isHttpProxyEnabled()) {
+                System.clearProperty("socksProxyHost");
+                System.clearProperty("socksProxyPort");
+                System.clearProperty("http.proxyHost");
+                System.clearProperty("http.proxyPort");
+                System.clearProperty("https.proxyHost");
+                System.clearProperty("https.proxyPort");
+            }
+        }
     }
 
     private String sendDirectRequest(String playerId, String message, Optional<Persona> persona) throws IOException {
+        // 获取API URL
+        String apiUrl = (String) config.getOrDefault("url", 
+            "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent");
+        String apiKey = (String) config.get("key");
+        
         List<Map<String, String>> history = chatHistories.computeIfAbsent(playerId, k -> new ArrayList<>());
         
         // 构建请求体
@@ -227,7 +255,7 @@ public class GeminiService {
         requestBody.add("generationConfig", generationConfig);
 
         // 发送请求
-        URL url = new URL(directApiEndpoint + "?key=" + configManager.getApiKey());
+        URL url = new URL(apiUrl + "?key=" + apiKey);
         plugin.debug("发送请求到: " + url.toString().replaceAll("key=.*", "key=***"));
         plugin.debug("请求体: " + requestBody.toString());
         
@@ -293,12 +321,23 @@ public class GeminiService {
     }
 
     private String sendOpenAIRequest(String playerId, String message, Optional<Persona> persona) throws IOException {
+        // 获取OpenAI配置
+        String url = (String) config.get("url");
+        String key = (String) config.get("key");
+        String model = (String) config.getOrDefault("model", "gpt-3.5-turbo");
+        double temperature = ((Number) config.getOrDefault("temperature", 0.7)).doubleValue();
+        int maxTokens = ((Number) config.getOrDefault("max_tokens", 1024)).intValue();
+        
+        if (url == null) {
+            throw new IllegalStateException("未配置OpenAI URL");
+        }
+        
         JsonObject requestBody = new JsonObject();
-        requestBody.addProperty("model", configManager.getConfig().getString("api.openai.model", "gpt-3.5-turbo"));
+        requestBody.addProperty("model", model);
         
         // 添加参数配置
-        requestBody.addProperty("temperature", configManager.getConfig().getDouble("api.openai.temperature", 0.7));
-        requestBody.addProperty("max_tokens", configManager.getConfig().getInt("api.openai.max_tokens", 1024));
+        requestBody.addProperty("temperature", temperature);
+        requestBody.addProperty("max_tokens", maxTokens);
         requestBody.addProperty("top_p", configManager.getConfig().getDouble("api.openai.top_p", 0.95));
         requestBody.addProperty("frequency_penalty", configManager.getConfig().getDouble("api.openai.frequency_penalty", 0.0));
         requestBody.addProperty("presence_penalty", configManager.getConfig().getDouble("api.openai.presence_penalty", 0.0));
@@ -334,14 +373,13 @@ public class GeminiService {
         requestBody.add("messages", messages);
         
         // 发送请求
-        String url = configManager.getConfig().getString("api.openai.url");
-        String apiKey = configManager.getConfig().getString("api.openai.key");
-        
         plugin.debug("发送OpenAI格式请求到: " + url);
         plugin.debug("请求体: " + requestBody.toString());
         
         HttpURLConnection conn = createConnection(new URL(url));
-        conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+        if (key != null && !key.isEmpty()) {
+            conn.setRequestProperty("Authorization", "Bearer " + key);
+        }
         
         try {
             try (OutputStreamWriter writer = new OutputStreamWriter(conn.getOutputStream(), StandardCharsets.UTF_8)) {
@@ -379,19 +417,6 @@ public class GeminiService {
         }
     }
 
-    private void handleErrorResponse(HttpURLConnection conn) throws IOException {
-        StringBuilder error = new StringBuilder();
-        try (Scanner scanner = new Scanner(conn.getErrorStream(), StandardCharsets.UTF_8.name())) {
-            while (scanner.hasNextLine()) {
-                error.append(scanner.nextLine());
-            }
-        }
-        String errorMessage = error.toString();
-        plugin.debug("API错误响应: " + errorMessage);
-        plugin.getLogger().warning("API 错误响应: " + errorMessage);
-        throw new IOException("Server returned HTTP response code: " + conn.getResponseCode() + "\n" + errorMessage);
-    }
-
     private String readResponse(HttpURLConnection conn) throws IOException {
         StringBuilder response = new StringBuilder();
         try (Scanner scanner = new Scanner(conn.getInputStream(), StandardCharsets.UTF_8.name())) {
@@ -402,22 +427,41 @@ public class GeminiService {
         return response.toString();
     }
 
+    private void handleErrorResponse(HttpURLConnection conn) throws IOException {
+        StringBuilder error = new StringBuilder();
+        try (Scanner scanner = new Scanner(conn.getErrorStream(), StandardCharsets.UTF_8.name())) {
+            while (scanner.hasNextLine()) {
+                error.append(scanner.nextLine());
+            }
+        }
+        String errorMessage = error.toString();
+        plugin.debug("API错误响应: " + errorMessage);
+        throw new IOException("Server returned HTTP response code: " + conn.getResponseCode() + "\n" + errorMessage);
+    }
+
     private void updateChatHistory(String playerId, String message, String response) {
         List<Map<String, String>> history = chatHistories.computeIfAbsent(playerId, k -> new ArrayList<>());
         
+        // 添加用户消息
         Map<String, String> userMessage = new HashMap<>();
         userMessage.put("role", "user");
         userMessage.put("content", message);
         history.add(userMessage);
 
+        // 添加AI响应
         Map<String, String> aiMessage = new HashMap<>();
         aiMessage.put("role", "assistant");
         aiMessage.put("content", response);
         history.add(aiMessage);
 
-        if (history.size() > configManager.getMaxHistory() * 2) {
-            history.subList(0, 2).clear();
+        // 检查历史记录长度
+        int maxHistory = configManager.getMaxHistory() * 2;
+        while (history.size() > maxHistory) {
+            history.remove(0);
+            history.remove(0);
         }
+        
+        plugin.debug(String.format("更新历史记录 [%s]: %d条消息", playerId, history.size()));
     }
 
     public void clearHistory(String playerId) {
